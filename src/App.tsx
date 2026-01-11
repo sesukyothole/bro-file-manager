@@ -954,27 +954,28 @@ export default function App() {
               />
             ) : null}
 
-            <FileList
-              showTrash={showTrash}
-              loading={loading}
-              trashItems={pagedTrashItems}
-              filtered={pagedEntries}
-              selectedNames={selectedNames}
-              allSelected={allSelected}
-              dragActive={dragActive}
-              actionLoading={actionLoading}
-              canWrite={canWrite}
-              pagination={{
-                page,
-                pageSize,
-                totalItems,
-                pageSizeOptions: PAGE_SIZE_OPTIONS,
-                onPageChange: handlePageChange,
-                onPageSizeChange: handlePageSizeChange,
-              }}
-              onToggleSelectAll={toggleSelectAll}
-              onToggleSelect={toggleSelect}
-              onEntryClick={handleEntryClick}
+              <FileList
+                showTrash={showTrash}
+                loading={loading}
+                trashItems={pagedTrashItems}
+                filtered={pagedEntries}
+                selectedNames={selectedNames}
+                allSelected={allSelected}
+                dragActive={dragActive}
+                actionLoading={actionLoading}
+                canWrite={canWrite}
+                pagination={{
+                  page,
+                  pageSize,
+                  totalItems,
+                  pageSizeOptions: PAGE_SIZE_OPTIONS,
+                  onPageChange: handlePageChange,
+                  onPageSizeChange: handlePageSizeChange,
+                }}
+                showPaginationTop
+                onToggleSelectAll={toggleSelectAll}
+                onToggleSelect={toggleSelect}
+                onEntryClick={handleEntryClick}
               onRestore={handleRestore}
               onDragOver={handleDragOver}
               onDragLeave={handleDragLeave}

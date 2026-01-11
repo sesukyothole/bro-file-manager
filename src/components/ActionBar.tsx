@@ -1,3 +1,14 @@
+import {
+  Archive,
+  ClipboardPaste,
+  Copy,
+  Download,
+  Eye,
+  Image,
+  MoveRight,
+  Pencil,
+  Trash2,
+} from "lucide-react";
 import type { Entry } from "../types";
 
 type ActionBarProps = {
@@ -43,6 +54,12 @@ export function ActionBar({
   onPreview,
   onImagePreview,
 }: ActionBarProps) {
+  const iconProps = {
+    size: 16,
+    strokeWidth: 1.8,
+    "aria-hidden": true,
+  } as const;
+
   return (
     <div className="card action-bar">
       <div>
@@ -58,6 +75,7 @@ export function ActionBar({
           onClick={onCopy}
           disabled={actionLoading || showTrash || selectionCount === 0}
         >
+          <Copy {...iconProps} />
           Copy
         </button>
         <button
@@ -65,6 +83,7 @@ export function ActionBar({
           onClick={onPaste}
           disabled={actionLoading || showTrash || clipboardCount === 0 || !canWrite}
         >
+          <ClipboardPaste {...iconProps} />
           Paste
         </button>
         <button
@@ -72,6 +91,7 @@ export function ActionBar({
           onClick={onRename}
           disabled={actionLoading || showTrash || selectionCount !== 1 || !canWrite}
         >
+          <Pencil {...iconProps} />
           Rename
         </button>
         <button
@@ -79,6 +99,7 @@ export function ActionBar({
           onClick={onMove}
           disabled={actionLoading || showTrash || selectionCount === 0 || !canWrite}
         >
+          <MoveRight {...iconProps} />
           Move
         </button>
         <button
@@ -86,6 +107,7 @@ export function ActionBar({
           onClick={onArchive}
           disabled={actionLoading || showTrash || selectionCount === 0}
         >
+          <Archive {...iconProps} />
           Archive
         </button>
         <button
@@ -93,6 +115,7 @@ export function ActionBar({
           onClick={onDelete}
           disabled={actionLoading || showTrash || selectionCount === 0 || !canWrite}
         >
+          <Trash2 {...iconProps} />
           Delete
         </button>
         {!showTrash && selected && selected.type === "file" ? (
@@ -100,16 +123,19 @@ export function ActionBar({
             <span className="action-divider" aria-hidden="true" />
             {canTextPreview ? (
               <button className="ghost" onClick={onPreview} disabled={previewLoading}>
+                <Eye {...iconProps} />
                 {previewLoading ? "Loading..." : "Preview"}
               </button>
             ) : null}
             {canImagePreview ? (
               <button className="ghost" onClick={onImagePreview}>
+                <Image {...iconProps} />
                 Image Preview
               </button>
             ) : null}
             {downloadHref ? (
               <a className="ghost" href={downloadHref}>
+                <Download {...iconProps} />
                 Download
               </a>
             ) : null}

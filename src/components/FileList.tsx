@@ -15,6 +15,7 @@ type FileListProps = {
   actionLoading: boolean;
   canWrite: boolean;
   pagination?: PaginationProps;
+  showPaginationTop?: boolean;
   onToggleSelectAll: () => void;
   onToggleSelect: (entry: Entry) => void;
   onEntryClick: (entry: Entry) => void;
@@ -35,6 +36,7 @@ export function FileList({
   actionLoading,
   canWrite,
   pagination,
+  showPaginationTop = false,
   onToggleSelectAll,
   onToggleSelect,
   onEntryClick,
@@ -50,6 +52,7 @@ export function FileList({
       onDragLeave={onDragLeave}
       onDrop={onDrop}
     >
+      {pagination && showPaginationTop ? <Pagination {...pagination} compact /> : null}
       {showTrash ? (
         <>
           <div className="list-header trash">

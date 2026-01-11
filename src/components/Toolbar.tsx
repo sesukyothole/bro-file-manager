@@ -1,3 +1,4 @@
+import { ArrowUp, FolderPlus, RefreshCw, Trash2, Upload } from "lucide-react";
 import type { ChangeEvent, RefObject } from "react";
 import type { Breadcrumb } from "../types";
 
@@ -36,6 +37,12 @@ export function Toolbar({
   onUploadChange,
   onBreadcrumbClick,
 }: ToolbarProps) {
+  const iconProps = {
+    size: 16,
+    strokeWidth: 1.8,
+    "aria-hidden": true,
+  } as const;
+
   return (
     <div className="toolbar card">
       <div>
@@ -63,12 +70,15 @@ export function Toolbar({
           disabled={showTrash}
         />
         <button className="ghost" onClick={onUp} disabled={!parent}>
+          <ArrowUp {...iconProps} />
           Up
         </button>
         <button className="ghost" onClick={onRefresh}>
+          <RefreshCw {...iconProps} />
           Refresh
         </button>
         <button onClick={onUploadClick} disabled={actionLoading || showTrash || !canWrite}>
+          <Upload {...iconProps} />
           Upload
         </button>
         <button
@@ -76,9 +86,11 @@ export function Toolbar({
           onClick={onCreateFolder}
           disabled={actionLoading || showTrash || !canWrite}
         >
+          <FolderPlus {...iconProps} />
           New Folder
         </button>
         <button className="ghost" onClick={onToggleTrash} disabled={actionLoading}>
+          <Trash2 {...iconProps} />
           {showTrash ? "Back to Files" : "Trash"}
         </button>
         <input

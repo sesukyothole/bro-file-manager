@@ -1,5 +1,10 @@
 @import url("https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600&family=Space+Grotesk:wght@400;500;600&display=swap");
 
+@config "../tailwind.config.cjs";
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
 :root {
   color-scheme: light;
   font-family: "Space Grotesk", "Avenir Next", "Segoe UI", sans-serif;
@@ -211,7 +216,7 @@ body {
   font-size: 0.85rem;
   letter-spacing: normal;
   text-transform: none;
-  padding: 8px 12px;
+  padding: 8px 34px 8px 12px;
 }
 
 .eyebrow {
@@ -383,12 +388,19 @@ input {
 }
 
 select {
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
   border-radius: 999px;
   border: 1px solid rgba(28, 37, 43, 0.2);
-  padding: 10px 14px;
+  padding: 10px 40px 10px 14px;
   font-size: 0.95rem;
   font-family: inherit;
-  background: #fff;
+  background-color: #fff;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%235a6b70' stroke-width='1.5'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  background-size: 14px;
   color: var(--ink);
 }
 
@@ -633,6 +645,14 @@ button.filters-toggle svg {
   margin-top: 4px;
   border-top: 1px solid rgba(28, 37, 43, 0.1);
   flex-wrap: wrap;
+}
+
+.pagination-compact {
+  margin-top: 0;
+  padding-top: 0;
+  padding-bottom: 12px;
+  border-top: none;
+  border-bottom: 1px solid rgba(28, 37, 43, 0.1);
 }
 
 .pagination-controls {

@@ -22,6 +22,8 @@ Current implementation notes:
 - Frontend files live in the repo root (`index.html`, `src/`, `vite.config.ts`).
 - Default `FILE_ROOT` in `.env` is `.`; set it to your NAS share path in production.
 - Legacy single-user login uses username `admin` (or leave username blank).
+- Tailwind CSS pipeline is enabled (config via `@config`, preflight disabled, `tw` prefix to avoid style collisions).
+- From this point forward, UI work should prefer Tailwind utilities for new changes.
 
 ## P0 - Easy auth + read-only baseline (function first)
 - [x] Authentication: local admin password
@@ -63,6 +65,9 @@ Current implementation notes:
 - [x] Filters card placed above the current path card
 - [x] Removed selection detail card
 - [x] Fixed filters expand/collapse icon visibility
+- [x] Action buttons use Lucide icons
+- [x] Toolbar buttons use Lucide icons
+- [x] Dropdown arrows aligned for filter and theme selects
 
 ## P4 - Search and indexing
 - [x] Filename search
@@ -82,6 +87,8 @@ Current implementation notes:
 - [x] Pagination for large dirs (page size selector)
 - [x] Server-side pagination for list API (page/pageSize query params)
 - [x] Sorting options (name, date, size, type)
+- [x] Pagination controls (prev/next + page size) shown above the list
+- [x] Pagination page-size select arrow repositioned
 - [ ] Background tasks for heavy ops
 - [ ] Rate limiting and throttling
 - [ ] Streaming uploads/downloads

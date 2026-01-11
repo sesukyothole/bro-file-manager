@@ -157,22 +157,7 @@ export function FiltersCard({
               Reset Filters
             </button>
           </div>
-          <div className="filter-group">
-            <span className="filter-label">Content</span>
-            <label className="filter-toggle">
-              <input
-                type="checkbox"
-                checked={contentSearch}
-                onChange={(event) => onContentSearchChange(event.target.checked)}
-              />
-              Search inside text files
-            </label>
-            {contentSearch && query.trim() ? (
-              <span className="filter-hint">
-                {contentLoading ? "Scanning..." : `${contentMatches.size} match(es)`}
-              </span>
-            ) : null}
-          </div>
+   
         </div>
       </div>
     </div>

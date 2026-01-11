@@ -5,6 +5,8 @@ export type PaginationProps = {
   pageSizeOptions: number[];
   onPageChange: (nextPage: number) => void;
   onPageSizeChange: (nextSize: number) => void;
+  showNavigation?: boolean;
+  compact?: boolean;
 };
 
 export function Pagination({
@@ -14,6 +16,8 @@ export function Pagination({
   pageSizeOptions,
   onPageChange,
   onPageSizeChange,
+  showNavigation,
+  compact,
 }: PaginationProps) {
   if (totalItems === 0) {
     return null;
@@ -23,9 +27,11 @@ export function Pagination({
   const currentPage = Math.min(Math.max(page, 1), totalPages);
   const rangeStart = (currentPage - 1) * pageSize + 1;
   const rangeEnd = Math.min(currentPage * pageSize, totalItems);
+  const navigationEnabled = showNavigation ?? true;
+  const className = ["pagination", compact ? "pagination-compact" : ""].filter(Boolean).join(" ");
 
   return (
-    <div className="pagination">
+    <div className={className}>
       <span className="meta">
         Showing {rangeStart}-{rangeEnd} of {totalItems}
       </span>
@@ -44,25 +50,29 @@ export function Pagination({
             ))}
           </select>
         </label>
-        <button
-          className="ghost"
-          type="button"
-          onClick={() => onPageChange(currentPage - 1)}
-          disabled={currentPage <= 1}
-        >
-          Prev
-        </button>
-        <span className="pagination-count">
-          Page {currentPage} of {totalPages}
-        </span>
-        <button
-          className="ghost"
-          type="button"
-          onClick={() => onPageChange(currentPage + 1)}
-          disabled={currentPage >= totalPages}
-        >
-          Next
-        </button>
+        {navigationEnabled ? (
+          <>
+            <button
+              className="ghost"
+              type="button"
+              onClick={() => onPageChange(currentPage - 1)}
+              disabled={currentPage <= 1}
+            >
+              Prev
+            </button>
+            <span className="pagination-count">
+              Page {currentPage} of {totalPages}
+            </span>
+            <button
+              className="ghost"
+              type="button"
+              onClick={() => onPageChange(currentPage + 1)}
+              disabled={currentPage >= totalPages}
+            >
+              Next
+            </button>
+          </>
+        ) : null}
       </div>
     </div>
   );
