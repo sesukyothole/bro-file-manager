@@ -374,9 +374,9 @@ app.get("/api/image", async (c) => {
   const file = Bun.file(resolved.fullPath);
   const ext = path.extname(resolved.fullPath).toLowerCase();
   const mime = file.type || IMAGE_MIME_BY_EXT[ext] || "application/octet-stream";
-  const filename = path.basename(resolved.fullPath).replace(/"/g, "");
+  const filename = path.basename(resolved.fullPath);
   c.header("Content-Type", mime);
-  c.header("Content-Disposition", `inline; filename="${filename}"`);
+  c.header("Content-Disposition", formatContentDisposition("inline", filename));
 
   await auditLog(c, "image_preview", { path: resolved.normalized, username: session.user });
 
@@ -443,10 +443,10 @@ app.get("/api/download", async (c) => {
   }
 
   const file = Bun.file(resolved.fullPath);
-  const filename = path.basename(resolved.fullPath).replace(/"/g, "");
+  const filename = path.basename(resolved.fullPath);
 
   c.header("Content-Type", file.type || "application/octet-stream");
-  c.header("Content-Disposition", `attachment; filename="${filename}"`);
+  c.header("Content-Disposition", formatContentDisposition("attachment", filename));
 
   await auditLog(c, "download", { path: resolved.normalized, username: session.user });
 
@@ -866,7 +866,7 @@ app.get("/api/archive", async (c) => {
   });
 
   c.header("Content-Type", format === "zip" ? "application/zip" : "application/gzip");
-  c.header("Content-Disposition", `attachment; filename="${archiveName}"`);
+  c.header("Content-Disposition", formatContentDisposition("attachment", archiveName));
   await auditLog(c, "archive", { paths: requested, format, compression, username: session.user });
   return c.body(process.stdout);
 });
@@ -1167,6 +1167,19 @@ function parsePositiveInt(value: string | undefined) {
     return null;
   }
   return parsed;
+}
+
+function encodeContentDispositionFilename(value: string) {
+  return encodeURIComponent(value).replace(/[!'()*]/g, (char) => {
+    return `%${char.charCodeAt(0).toString(16).toUpperCase()}`;
+  });
+}
+
+function formatContentDisposition(type: "inline" | "attachment", filename: string) {
+  const base = filename.replace(/[\r\n"]/g, "").replace(/[\\/]/g, "_");
+  const fallback = base.replace(/[^\x20-\x7E]+/g, "_").trim() || "file";
+  const encoded = encodeContentDispositionFilename(filename);
+  return `${type}; filename="${fallback}"; filename*=UTF-8''${encoded}`;
 }
 
 function sanitizeName(value: string) {

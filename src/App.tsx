@@ -21,6 +21,7 @@ import {
   API_BASE,
   DATE_RANGE_MS,
   DEFAULT_PAGE_SIZE,
+  LAST_PATH_STORAGE_KEY,
   PAGE_SIZE_OPTIONS,
   SHORTCUTS_ENABLED,
 } from "./constants";
@@ -47,6 +48,35 @@ import { parseSizeInput } from "./utils/filters";
 import { isImagePreviewable, isTextPreviewableName, matchesTypeFilter } from "./utils/fileTypes";
 import { joinPath, normalizeInputPath } from "./utils/path";
 import { sortEntries } from "./utils/sort";
+
+function getStoredPath() {
+  if (typeof window === "undefined") {
+    return null;
+  }
+  const stored = window.localStorage.getItem(LAST_PATH_STORAGE_KEY);
+  if (!stored || !stored.startsWith("/")) {
+    return null;
+  }
+  return stored;
+}
+
+function setStoredPath(value: string) {
+  if (typeof window === "undefined") {
+    return;
+  }
+  try {
+    window.localStorage.setItem(LAST_PATH_STORAGE_KEY, value);
+  } catch {}
+}
+
+function clearStoredPath() {
+  if (typeof window === "undefined") {
+    return;
+  }
+  try {
+    window.localStorage.removeItem(LAST_PATH_STORAGE_KEY);
+  } catch {}
+}
 
 export default function App() {
   const [auth, setAuth] = useState<AuthState>("unknown");
@@ -128,14 +158,14 @@ export default function App() {
     if (response.status === 401) {
       setAuth("logged_out");
       setLoading(false);
-      return;
+      return false;
     }
 
     if (!response.ok) {
       const data = await readJson(response);
       setError(data?.error ?? "Failed to load directory.");
       setLoading(false);
-      return;
+      return false;
     }
 
     const data = (await response.json()) as ListResponse;
@@ -146,6 +176,8 @@ export default function App() {
     setUserRole(data.role);
     setAuth("authed");
     setLoading(false);
+    setStoredPath(data.path);
+    return true;
   }, []);
 
   const loadTrash = useCallback(async () => {
@@ -870,7 +902,15 @@ export default function App() {
 
   useEffect(() => {
     if (auth === "unknown") {
-      loadPath("/");
+      const initialPath = getStoredPath() ?? "/";
+      const loadInitialPath = async () => {
+        const ok = await loadPath(initialPath);
+        if (!ok && initialPath !== "/") {
+          clearStoredPath();
+          await loadPath("/");
+        }
+      };
+      void loadInitialPath();
     }
   }, [auth, loadPath]);
 
