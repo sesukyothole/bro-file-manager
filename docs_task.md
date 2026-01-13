@@ -9,6 +9,7 @@ Status legend:
 Current implementation notes:
 - Read/write file manager with login gate (single admin password or local user list).
 - Session cookies rotate on activity and expire after 8 hours.
+- Session cookie secure flag follows request scheme (via `x-forwarded-proto`) to support HTTP in local Docker.
 - Default port is 3033; Vite dev uses 5173 with API proxy.
 - Symlinks are skipped to prevent escaping the root path.
 - Preview is text-only and capped at 200 KB.

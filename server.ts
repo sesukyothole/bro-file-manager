@@ -56,10 +56,9 @@ const ARCHIVE_LARGE_BYTES =
     ? ARCHIVE_LARGE_MB * 1024 * 1024
     : 100 * 1024 * 1024;
 const AUDIT_LOG_PATH = process.env.AUDIT_LOG_PATH?.trim() ?? path.join(process.cwd(), "audit.log");
-const SESSION_COOKIE_OPTIONS = {
+const SESSION_COOKIE_BASE_OPTIONS = {
   httpOnly: true,
   sameSite: "Strict",
-  secure: process.env.NODE_ENV === "production",
   maxAge: Math.floor(SESSION_TTL_MS / 1000),
   path: "/",
 } as const;
@@ -972,8 +971,19 @@ function sign(value: string) {
   return createHmac("sha256", SESSION_SECRET).update(value).digest("base64url");
 }
 
+function isSecureRequest(c: Parameters<typeof setCookie>[0]) {
+  const forwardedProto = c.req.header("x-forwarded-proto");
+  if (forwardedProto) {
+    return forwardedProto.split(",")[0]?.trim() === "https";
+  }
+  return c.req.url.startsWith("https://");
+}
+
 function setSessionCookie(c: Parameters<typeof setCookie>[0], value: string) {
-  setCookie(c, SESSION_COOKIE, value, SESSION_COOKIE_OPTIONS);
+  setCookie(c, SESSION_COOKIE, value, {
+    ...SESSION_COOKIE_BASE_OPTIONS,
+    secure: isSecureRequest(c),
+  });
 }
 
 function canWrite(role: UserRole) {
