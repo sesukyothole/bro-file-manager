@@ -2,13 +2,23 @@
 
 # Bro File Manager
 
-A small file manager inspired by tinyfilemanager, rebuilt with Bun + Hono + React. It ships with cookie-based auth, safe path resolution, and a tidy UI for browsing server folders.
+👨🏻 Lightweight file manager built with Bun + Hono + React. It ships with cookie-based auth, safe path resolution, and a tidy UI for browsing server folders.
 
 ## Features
-- Read/write directory listing and file operations.
-- Stateless auth with signed session cookie.
-- Optional text preview (first 200 KB).
-- Safe path normalization to prevent directory traversal.
+- Read/write file operations (upload, download, create, rename, delete/restore, copy/paste).
+- Drag-and-drop upload across the app surface.
+- Batch downloads as zip or tar.gz, with large zips switching to store mode.
+- Search, filters, sorting, pagination, and a recent view for large directories.
+- Image preview popup and text preview (first 200 KB).
+- Local users with roles and per-share roots; stateless signed session cookie.
+- Audit logging for file actions.
+- Safe path normalization with symlink avoidance to prevent traversal.
+
+## Recent improvements
+- Header logo and selection-aware toolbar with clear selection.
+- Restore the last visited folder on refresh.
+- Session cookies set `Secure` based on request scheme (supports HTTP in local Docker).
+- Docker Compose host mounts can be overridden via `HOST_DATA_PATH` and `HOST_LOGS_PATH`.
 
 ## Requirements
 - Bun >= 1.1
