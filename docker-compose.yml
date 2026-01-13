@@ -9,6 +9,9 @@ services:
       ADMIN_PASSWORD: change-me
       SESSION_SECRET: change-me
       AUDIT_LOG_PATH: /app/logs/audit.log
+    # Optionally load environment variables from .env (Compose-level).
+    # env_file:
+    #   - .env
     volumes:
       - ./data:/data
       - ./logs:/app/logs

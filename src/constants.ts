@@ -2,10 +2,10 @@ import type { DateFilter, Theme } from "./types";
 import { parseEnvBoolean } from "./utils/env";
 
 export const API_BASE = "/api";
-export const BRAND_EYEBROW = import.meta.env.VITE_BRAND_EYEBROW ?? "Bro File Manager";
-export const BRAND_TITLE = import.meta.env.VITE_BRAND_TITLE ?? "Storage Lens";
+export const BRAND_EYEBROW = import.meta.env.VITE_BRAND_EYEBROW ?? "File Manager";
+export const BRAND_TITLE = import.meta.env.VITE_BRAND_TITLE ?? "Bro FM";
 export const BRAND_SUBTITLE =
-  import.meta.env.VITE_BRAND_SUBTITLE ?? "Manage the server file tree with guarded access.";
+  import.meta.env.VITE_BRAND_SUBTITLE ?? "Manage file in server easily 😌";
 export const SHORTCUTS_ENABLED = parseEnvBoolean(import.meta.env.VITE_SHORTCUTS_ENABLED, false);
 
 export const DEFAULT_THEME: Theme = "dawn";
