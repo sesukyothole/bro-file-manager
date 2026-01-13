@@ -6,3 +6,4 @@ docs_task.md
 audit.log
 dist/
 bugnfeat.md
+.gitignore

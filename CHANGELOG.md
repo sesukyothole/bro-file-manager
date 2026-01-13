@@ -6,6 +6,19 @@ The format is based on Keep a Changelog, and this project follows SemVer.
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-01-13
+### Added
+- Header logo displayed alongside the brand title.
+- Clear selection action in the toolbar when items are selected.
+- Drag-and-drop upload across the entire app surface.
+- Restore the last visited folder path on refresh.
+### Changed
+- Docker Compose now mounts `./logs` and writes audit logs to `/app/logs/audit.log`.
+- Session cookies set `Secure` based on request scheme (supports HTTP in local Docker).
+### Fixed
+- Selection state can be cleared after clicking a row entry.
+- Image preview/download headers handle non-ASCII filenames.
+
 ## [0.2.0] - 2026-01-12
 ### Added
 - Zip archive downloads for selected files/folders (archive endpoint supports `format=zip` or `format=targz`).
