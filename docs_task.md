@@ -17,6 +17,7 @@ Current implementation notes:
 - Deleted items move into a hidden `/.trash` folder; restore requires the original parent path to exist.
 - Local users can be scoped to a subfolder of `FILE_ROOT` for per-share access.
 - Audit events are written as JSON lines to `./audit.log` by default.
+- Docker Compose writes audit logs to `./logs/audit.log` via `AUDIT_LOG_PATH`.
 - `.env` is supported for configuration (Bun loads it automatically).
 - `.env.example` is provided; `.env` is ignored via `.gitignore`.
 - Frontend files live in the repo root (`index.html`, `src/`, `vite.config.ts`).
