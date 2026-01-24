@@ -4,6 +4,16 @@ import { getCookie, setCookie, deleteCookie } from "hono/cookie";
 import { createHmac, randomUUID, scryptSync, timingSafeEqual } from "crypto";
 import { promises as fs } from "fs";
 import path from "path";
+import { S3Client, ListObjectsV2Command } from "@aws-sdk/client-s3";
+import { S3StorageAdapter } from "./server/storage/adapters.js";
+import {
+  getS3Config,
+  s3ConfigToStorageConfig,
+  addS3Config,
+  updateS3Config,
+  deleteS3Config,
+  getAllS3Configs,
+} from "./server/storage/settings.js";
 
 type UserRole = "read-only" | "read-write" | "admin";
 
@@ -105,6 +115,27 @@ const IMAGE_MIME_BY_EXT: Record<string, string> = {
 
 const USERS = await loadUsers();
 const USER_MAP = new Map(USERS.map((user) => [user.username, user]));
+
+// S3 session storage
+const s3Sessions = new Map<string, { configId: string; adapter: S3StorageAdapter }>();
+
+function setSessionS3(sessionId: string, configId: string, adapter: S3StorageAdapter) {
+  s3Sessions.set(sessionId, { configId, adapter });
+}
+
+function getSessionS3(sessionId: string): { configId: string; adapter: S3StorageAdapter } | undefined {
+  return s3Sessions.get(sessionId);
+}
+
+function clearSessionS3(sessionId: string) {
+  s3Sessions.delete(sessionId);
+}
+
+async function getS3Adapter(configId: string): Promise<S3StorageAdapter | null> {
+  const config = await getS3Config(configId);
+  if (!config) return null;
+  return new S3StorageAdapter(s3ConfigToStorageConfig(config));
+}
 
 const app = new Hono<{ Variables: { session: SessionContext } }>();
 
@@ -973,6 +1004,147 @@ app.get("/api/archive", async (c) => {
   c.header("Content-Disposition", formatContentDisposition("attachment", archiveName));
   await auditLog(c, "archive", { paths: requested, format, compression, username: session.user });
   return c.body(process.stdout);
+});
+
+// ============================================================================
+// S3 Configuration Endpoints (Admin only)
+// ============================================================================
+
+app.get("/api/s3/configs", async (c) => {
+  const session = c.get("session");
+  if (session.role !== "admin") {
+    return c.json({ error: "Unauthorized" }, 401);
+  }
+
+  const configs = await getAllS3Configs();
+  // Return configs without secrets for list view
+  const safeConfigs = configs.map(({ secretAccessKey: _, ...rest }) => rest);
+  return c.json({ configs: safeConfigs });
+});
+
+app.get("/api/s3/configs/:id", async (c) => {
+  const session = c.get("session");
+  if (session.role !== "admin") {
+    return c.json({ error: "Unauthorized" }, 401);
+  }
+
+  const id = c.req.param("id");
+  const config = await getS3Config(id);
+  if (!config) {
+    return c.json({ error: "Configuration not found" }, 404);
+  }
+
+  return c.json({ config });
+});
+
+app.post("/api/s3/configs", async (c) => {
+  const session = c.get("session");
+  if (session.role !== "admin") {
+    return c.json({ error: "Unauthorized" }, 401);
+  }
+
+  const body = await c.req.json();
+  const { name, region, endpoint, accessKeyId, secretAccessKey, bucket, prefix } = body;
+
+  if (!name || !region || !accessKeyId || !secretAccessKey || !bucket) {
+    return c.json({ error: "Missing required fields" }, 400);
+  }
+
+  try {
+    const config = await addS3Config({
+      name,
+      region,
+      endpoint,
+      accessKeyId,
+      secretAccessKey,
+      bucket,
+      prefix,
+    });
+
+    await auditLog(c, "s3_config_added", { username: session.user, configId: config.id, name });
+
+    return c.json({ config: { ...config, secretAccessKey: "***" } }, 201);
+  } catch (error) {
+    return c.json({ error: "Failed to create configuration" }, 500);
+  }
+});
+
+app.put("/api/s3/configs/:id", async (c) => {
+  const session = c.get("session");
+  if (session.role !== "admin") {
+    return c.json({ error: "Unauthorized" }, 401);
+  }
+
+  const id = c.req.param("id");
+  const body = await c.req.json();
+
+  try {
+    const updated = await updateS3Config(id, body);
+    if (!updated) {
+      return c.json({ error: "Configuration not found" }, 404);
+    }
+
+    await auditLog(c, "s3_config_updated", { username: session.user, configId: id });
+
+    return c.json({ config: { ...updated, secretAccessKey: "***" } });
+  } catch (error) {
+    return c.json({ error: "Failed to update configuration" }, 500);
+  }
+});
+
+app.delete("/api/s3/configs/:id", async (c) => {
+  const session = c.get("session");
+  if (session.role !== "admin") {
+    return c.json({ error: "Unauthorized" }, 401);
+  }
+
+  const id = c.req.param("id");
+
+  const deleted = await deleteS3Config(id);
+  if (!deleted) {
+    return c.json({ error: "Configuration not found" }, 404);
+  }
+
+  await auditLog(c, "s3_config_deleted", { username: session.user, configId: id });
+
+  return c.json({ success: true });
+});
+
+app.post("/api/s3/configs/:id/test", async (c) => {
+  const session = c.get("session");
+  if (session.role !== "admin") {
+    return c.json({ error: "Unauthorized" }, 401);
+  }
+
+  const id = c.req.param("id");
+  const config = await getS3Config(id);
+  if (!config) {
+    return c.json({ error: "Configuration not found" }, 404);
+  }
+
+  try {
+    const client = new S3Client({
+      region: config.region,
+      endpoint: config.endpoint,
+      credentials: {
+        accessKeyId: config.accessKeyId,
+        secretAccessKey: config.secretAccessKey,
+      },
+    });
+
+    // Try to list objects (with max 1) to test connection
+    await client.send(new ListObjectsV2Command({
+      Bucket: config.bucket,
+      MaxKeys: 1,
+    }));
+
+    await auditLog(c, "s3_config_tested", { username: session.user, configId: id, success: true });
+
+    return c.json({ success: true, message: "Connection successful" });
+  } catch (error: any) {
+    await auditLog(c, "s3_config_tested", { username: session.user, configId: id, success: false, error: error.message });
+    return c.json({ success: false, error: error.message }, 400);
+  }
 });
 
 app.use("/*", serveStatic({ root: "./dist" }));
