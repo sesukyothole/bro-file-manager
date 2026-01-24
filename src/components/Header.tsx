@@ -23,6 +23,7 @@ type HeaderProps = {
   onSizeMaxChange: (value: string) => void;
   onDateFilterChange: (value: DateFilter) => void;
   onClearFilters: () => void;
+  onOpenS3Settings?: () => void;
 };
 
 export function Header({
@@ -45,6 +46,7 @@ export function Header({
   onSizeMaxChange,
   onDateFilterChange,
   onClearFilters,
+  onOpenS3Settings,
 }: HeaderProps) {
   return (
     <header className="header">
@@ -75,9 +77,32 @@ export function Header({
             </select>
           </label>
           {auth === "authed" ? (
-            <button className="ghost" onClick={onLogout} aria-label="Logout" title="Logout">
-              <LogOut size={16} strokeWidth={1.8} aria-hidden="true" />
-            </button>
+            <>
+              {userRole === "admin" && onOpenS3Settings && (
+                <button
+                  className="ghost"
+                  onClick={onOpenS3Settings}
+                  aria-label="S3 Settings"
+                  title="S3 Settings"
+                >
+                  <svg
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.8"
+                    aria-hidden="true"
+                  >
+                    <path d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5.002 5.002 0 10-9.78 2.096A4.001 4.001 0 003 15z" />
+                    <path d="M12 12v6m-3-3h6" />
+                  </svg>
+                </button>
+              )}
+              <button className="ghost" onClick={onLogout} aria-label="Logout" title="Logout">
+                <LogOut size={16} strokeWidth={1.8} aria-hidden="true" />
+              </button>
+            </>
           ) : null}
           {auth === "authed" && !showTrash ? (
             <button

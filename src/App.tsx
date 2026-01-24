@@ -18,6 +18,9 @@ import { FileList } from "./components/FileList";
 import { TextPreviewModal } from "./components/TextPreviewModal";
 import { Toasts } from "./components/Toasts";
 import { Toolbar } from "./components/Toolbar";
+import { StorageSwitcher } from "./components/StorageSwitcher";
+import { S3ConnectionModal } from "./components/S3ConnectionModal";
+import { S3SettingsModal } from "./components/S3SettingsModal";
 import {
   API_BASE,
   DATE_RANGE_MS,
@@ -33,6 +36,7 @@ import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
 import { useTheme } from "./hooks/useTheme";
 import { useToasts } from "./hooks/useToasts";
 import { apiFetch, readJson } from "./services/api";
+import * as s3Api from "./services/api";
 import type {
   AuthState,
   Breadcrumb,
@@ -42,7 +46,9 @@ import type {
   Entry,
   ListResponse,
   Preview,
+  S3ConnectionState,
   SortMode,
+  StorageMode,
   TrashItem,
   TrashResponse,
   TypeFilter,
@@ -152,6 +158,16 @@ export default function App() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const dragDepth = useRef(0);
 
+  // S3-related state
+  const [storageMode, setStorageMode] = useState<StorageMode>(() => {
+    if (typeof window === "undefined") return "local";
+    const stored = window.localStorage.getItem("storageMode");
+    return (stored === "s3" ? "s3" : "local") as StorageMode;
+  });
+  const [showS3Connection, setShowS3Connection] = useState(false);
+  const [showS3Settings, setShowS3Settings] = useState(false);
+  const [s3Connection, setS3Connection] = useState<S3ConnectionState>({ connected: false });
+
   const [theme, setTheme] = useTheme();
   const { toasts, pushToast } = useToasts();
 
@@ -192,7 +208,55 @@ export default function App() {
     setShowTrash(false);
     setDragActive(false);
 
-    const response = await apiFetch(`/list?path=${encodeURIComponent(targetPath)}`);
+    if (storageMode === "s3") {
+      // S3 mode
+      if (!s3Connection.connected) {
+        setLoading(false);
+        return false;
+      }
+
+      const params = new URLSearchParams({
+        path: targetPath,
+        limit: pageSize.toString(),
+        offset: ((page - 1) * pageSize).toString(),
+      });
+
+      try {
+        const response = await fetch(`${API_BASE}/api/s3/list?${params}`, {
+          credentials: "include",
+        });
+
+        if (response.status === 401) {
+          setAuth("logged_out");
+          setLoading(false);
+          return false;
+        }
+
+        if (!response.ok) {
+          const data = await readJson(response);
+          setError(data?.error ?? "Failed to load S3 directory.");
+          setLoading(false);
+          return false;
+        }
+
+        const data = await response.json();
+        setEntries(data.entries || []);
+        setPath(targetPath);
+        // Calculate parent path for S3
+        const segments = targetPath.split("/").filter(Boolean);
+        segments.pop();
+        setParent(segments.length > 0 ? `/${segments.join("/")}` : null);
+        setLoading(false);
+        return true;
+      } catch (err) {
+        setError("Failed to load S3 directory.");
+        setLoading(false);
+        return false;
+      }
+    }
+
+    // Local mode - existing code
+    const response = await apiFetch(`/list?path=${encodeURIComponent(targetPath)}&limit=${pageSize}&offset=${(page - 1) * pageSize}`);
     if (response.status === 401) {
       setAuth("logged_out");
       setLoading(false);
@@ -216,7 +280,7 @@ export default function App() {
     setLoading(false);
     setStoredPath(data.path);
     return true;
-  }, []);
+  }, [storageMode, s3Connection.connected, page, pageSize]);
 
   const loadTrash = useCallback(async () => {
     setLoading(true);
@@ -1107,6 +1171,23 @@ export default function App() {
     setStoredViewMode(viewMode);
   }, [viewMode]);
 
+  // Sync storage mode to localStorage
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      window.localStorage.setItem("storageMode", storageMode);
+    } catch {}
+  }, [storageMode]);
+
+  // Check S3 connection status when storage mode is S3
+  useEffect(() => {
+    if (storageMode === "s3" && auth === "authed") {
+      s3Api.s3GetCurrentConnection()
+        .then(setS3Connection)
+        .catch(() => setS3Connection({ connected: false }));
+    }
+  }, [storageMode, auth]);
+
   return (
     <div
       className="app"
@@ -1156,7 +1237,26 @@ export default function App() {
           onSizeMaxChange={setSizeMaxMb}
           onDateFilterChange={setDateFilter}
           onClearFilters={handleClearFilters}
+          onOpenS3Settings={() => setShowS3Settings(true)}
         />
+
+        {auth === "authed" && (
+          <StorageSwitcher
+            mode={storageMode}
+            onModeChange={(mode) => {
+              if (mode === "s3" && !s3Connection.connected) {
+                setShowS3Connection(true);
+              }
+              setStorageMode(mode);
+              setPath("/");
+              setPage(1);
+              setSelected(null);
+              setSelectedNames([]);
+            }}
+            s3Connected={s3Connection.connected}
+            s3ConfigName={s3Connection.config?.name}
+          />
+        )}
 
         {auth === "logged_out" ? (
           <LoginForm
@@ -1257,6 +1357,24 @@ export default function App() {
           </div>
         )}
       </div>
+
+      <S3ConnectionModal
+        isOpen={showS3Connection}
+        onClose={() => setShowS3Connection(false)}
+        onConnected={async () => {
+          const conn = await s3Api.s3GetCurrentConnection();
+          setS3Connection(conn);
+          loadPath(path);
+        }}
+        userRole={userRole}
+      />
+
+      {userRole === "admin" && (
+        <S3SettingsModal
+          isOpen={showS3Settings}
+          onClose={() => setShowS3Settings(false)}
+        />
+      )}
     </div>
   );
 }
