@@ -17,6 +17,7 @@ Sponsored by [Jetorbit.com](https://jetorbit.com)
 - Local users with roles and per-share roots; stateless signed session cookie.
 - Audit logging for file actions.
 - Safe path normalization with symlink avoidance to prevent traversal.
+- **S3 integration** - Manage files on AWS S3, Cloudflare R2, Backblaze B2, MinIO, and other S3-compatible services.
 
 ## Recent improvements
 - Header logo and selection-aware toolbar with clear selection.
@@ -94,6 +95,62 @@ bun run start
 
 Visit `http://localhost:3033` and sign in with your configured user.
 If you are using `ADMIN_PASSWORD`, the default username is `admin` (or leave the username blank).
+
+## S3 Integration ☁️
+
+Bro File Manager supports managing files on S3-compatible storage services including:
+- **AWS S3** - Amazon Simple Storage Service
+- **Cloudflare R2** - Zero-egress object storage
+- **Backblaze B2** - Cloud storage with S3-compatible API
+- **MinIO** - Self-hosted object storage
+- Any other S3-compatible service
+
+### Configuration (Admin only)
+
+1. Log in as an admin user
+2. Click the cloud icon in the header to open S3 Settings
+3. Click "Add New Configuration"
+4. Choose a preset (AWS S3, Cloudflare R2, Backblaze B2, MinIO) or configure manually:
+   - **Configuration Name**: A friendly name for this connection
+   - **Bucket Name**: Your S3 bucket name
+   - **Region**: AWS region (e.g., `us-east-1`, `auto` for Cloudflare R2)
+   - **Access Key ID**: Your S3 access key
+   - **Secret Access Key**: Your S3 secret key
+   - **Custom Endpoint**: Required for non-AWS services (e.g., `https://<account_id>.r2.cloudflarestorage.com`)
+   - **Optional Prefix**: Prefix all keys with a path (e.g., `folder/`)
+
+5. Click "Test Connection" to verify
+6. Click "Create" to save
+
+### Using S3 Storage
+
+1. Switch between **Local Files** and **S3 Storage** using the toggle in the header
+2. When switching to S3 mode, you'll be prompted to select a configuration
+3. All file operations (list, upload, download, edit, delete, move, copy) work the same way
+4. Each user session can connect to a different S3 configuration
+
+### Supported Operations on S3
+
+| Operation | Support |
+|-----------|----------|
+| List files/folders | ✅ |
+| Upload files | ✅ |
+| Download files | ✅ |
+| Delete files/folders | ✅ |
+| Rename/Move | ✅ |
+| Copy | ✅ |
+| Create folders | ✅ |
+| Edit text files | ✅ |
+| Preview files | ✅ |
+| Image preview | ✅ |
+
+### Notes
+
+- Large file uploads are streamed directly to S3
+- S3 "directories" are simulated using key prefixes
+- Delete operations on folders will delete all objects with that prefix
+- S3 credentials are stored in `data/settings.json` on the server
+- All S3 operations are logged to the audit log
 
 ## Dev mode
 Run the server and Vite (HMR) together:
