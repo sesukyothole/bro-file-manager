@@ -2,6 +2,7 @@ import { Home } from "lucide-react";
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -20,7 +21,8 @@ import { Toasts } from "./components/Toasts";
 import { Toolbar } from "./components/Toolbar";
 import { StorageSwitcher } from "./components/StorageSwitcher";
 import { S3ConnectionModal } from "./components/S3ConnectionModal";
-import { S3SettingsModal } from "./components/S3SettingsModal";
+import { Footer } from "./components/Footer";
+import { S3SettingsPage } from "./components/S3SettingsPage";
 import {
   API_BASE,
   DATE_RANGE_MS,
@@ -82,7 +84,7 @@ function setStoredPath(value: string) {
   }
   try {
     window.localStorage.setItem(LAST_PATH_STORAGE_KEY, value);
-  } catch {}
+  } catch { }
 }
 
 function clearStoredPath() {
@@ -91,7 +93,7 @@ function clearStoredPath() {
   }
   try {
     window.localStorage.removeItem(LAST_PATH_STORAGE_KEY);
-  } catch {}
+  } catch { }
 }
 
 function getStoredViewMode(): ViewMode {
@@ -111,7 +113,7 @@ function setStoredViewMode(value: ViewMode) {
   }
   try {
     window.localStorage.setItem(VIEW_MODE_STORAGE_KEY, value);
-  } catch {}
+  } catch { }
 }
 
 export default function App() {
@@ -165,8 +167,12 @@ export default function App() {
     return (stored === "s3" ? "s3" : "local") as StorageMode;
   });
   const [showS3Connection, setShowS3Connection] = useState(false);
-  const [showS3Settings, setShowS3Settings] = useState(false);
   const [s3Connection, setS3Connection] = useState<S3ConnectionState>({ connected: false });
+  const [pendingS3Connect, setPendingS3Connect] = useState(false);
+  const [route, setRoute] = useState<"files" | "s3">(() => {
+    if (typeof window === "undefined") return "files";
+    return window.location.pathname === "/s3-settings" ? "s3" : "files";
+  });
 
   const [theme, setTheme] = useTheme();
   const { toasts, pushToast } = useToasts();
@@ -196,7 +202,7 @@ export default function App() {
     onError: notifyError,
   });
 
-  const loadPath = useCallback(async (targetPath: string) => {
+  const loadPath = useCallback(async (targetPath: string, modeOverride?: StorageMode, s3ConnectedOverride?: boolean) => {
     setLoading(true);
     setError(null);
     setSelected(null);
@@ -208,13 +214,17 @@ export default function App() {
     setShowTrash(false);
     setDragActive(false);
 
-    if (storageMode === "s3") {
-      // S3 mode
-      if (!s3Connection.connected) {
-        setLoading(false);
-        return false;
+    let activeMode = modeOverride ?? storageMode;
+    const s3Connected = s3ConnectedOverride ?? s3Connection.connected;
+    if (activeMode === "s3" && !s3Connected) {
+      activeMode = "local";
+      if (storageMode !== "local") {
+        setStorageMode("local");
       }
+    }
 
+    if (activeMode === "s3") {
+      // S3 mode
       const params = new URLSearchParams({
         path: targetPath,
         limit: pageSize.toString(),
@@ -1109,8 +1119,10 @@ export default function App() {
     sortMode !== "default" ||
     contentSearch;
 
+  const showS3SettingsPage = auth === "authed" && userRole === "admin" && route === "s3";
+
   useKeyboardShortcuts({
-    enabled: SHORTCUTS_ENABLED,
+    enabled: SHORTCUTS_ENABLED && !showS3SettingsPage,
     showTrash,
     selectionTargets,
     handlers: {
@@ -1176,7 +1188,7 @@ export default function App() {
     if (typeof window === "undefined") return;
     try {
       window.localStorage.setItem("storageMode", storageMode);
-    } catch {}
+    } catch { }
   }, [storageMode]);
 
   // Check S3 connection status when storage mode is S3
@@ -1187,6 +1199,38 @@ export default function App() {
         .catch(() => setS3Connection({ connected: false }));
     }
   }, [storageMode, auth]);
+
+  useLayoutEffect(() => {
+    if (typeof window === "undefined") return;
+    const handlePopState = () => {
+      setRoute(window.location.pathname === "/s3-settings" ? "s3" : "files");
+    };
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, []);
+
+  useEffect(() => {
+    if (auth === "authed" && route === "s3" && userRole !== "admin") {
+      setRoute("files");
+      if (typeof window !== "undefined") {
+        window.history.replaceState(null, "", "/");
+      }
+    }
+  }, [route, userRole, auth]);
+
+  const navigateToFiles = useCallback(() => {
+    if (typeof window !== "undefined") {
+      window.history.pushState(null, "", "/");
+    }
+    setRoute("files");
+  }, []);
+
+  const navigateToS3Settings = useCallback(() => {
+    if (typeof window !== "undefined") {
+      window.history.pushState(null, "", "/s3-settings");
+    }
+    setRoute("s3");
+  }, []);
 
   return (
     <div
@@ -1237,7 +1281,11 @@ export default function App() {
           onSizeMaxChange={setSizeMaxMb}
           onDateFilterChange={setDateFilter}
           onClearFilters={handleClearFilters}
-          onOpenS3Settings={() => setShowS3Settings(true)}
+          onOpenS3Settings={navigateToS3Settings}
+          onNavigateHome={() => {
+            navigateToFiles();
+            loadPath("/");
+          }}
         />
 
         {auth === "authed" && (
@@ -1246,7 +1294,10 @@ export default function App() {
             onModeChange={(mode) => {
               if (mode === "s3" && !s3Connection.connected) {
                 setShowS3Connection(true);
+                setPendingS3Connect(true);
+                return;
               }
+              setPendingS3Connect(false);
               setStorageMode(mode);
               setPath("/");
               setPage(1);
@@ -1269,112 +1320,134 @@ export default function App() {
           />
         ) : (
           <div className="stack">
-            <Toolbar
-              query={query}
-              currentPathLabel={currentPathLabel}
-              onQueryChange={setQuery}
-              onUp={() => parent && loadPath(parent)}
-              onRefresh={() => loadPath(path)}
-              onUploadClick={handleUploadClick}
-              onCreateFolder={handleCreateFolder}
-              onToggleTrash={handleToggleTrash}
-              showTrash={showTrash}
-              viewMode={viewMode}
-              onViewModeChange={setViewMode}
-              showEdit={canEditTarget}
-              editDisabled={editDisabled}
-              editLoading={editorLoading}
-              onEdit={handleOpenEditor}
-              actionLoading={actionLoading}
-              canWrite={canWrite}
-              selectionCount={selectionCount}
-              clipboardCount={clipboard?.length ?? 0}
-              archiveHref={archiveHref}
-              parent={parent}
-              fileInputRef={fileInputRef}
-              onUploadChange={handleUploadChange}
-              onCopy={handleCopy}
-              onPaste={handlePaste}
-              onRename={handleRename}
-              onMove={handleMove}
-              onArchiveClick={handleArchiveClick}
-              onDelete={handleDelete}
-              onClearSelection={handleClearSelection}
-            />
+            {showS3SettingsPage ? (
+              <S3SettingsPage onBack={navigateToFiles} />
+            ) : (
+              <>
+                <Toolbar
+                  query={query}
+                  currentPathLabel={currentPathLabel}
+                  onQueryChange={setQuery}
+                  onUp={() => parent && loadPath(parent)}
+                  onRefresh={() => loadPath(path)}
+                  onUploadClick={handleUploadClick}
+                  onCreateFolder={handleCreateFolder}
+                  onToggleTrash={handleToggleTrash}
+                  showTrash={showTrash}
+                  viewMode={viewMode}
+                  onViewModeChange={setViewMode}
+                  showEdit={canEditTarget}
+                  editDisabled={editDisabled}
+                  editLoading={editorLoading}
+                  onEdit={handleOpenEditor}
+                  actionLoading={actionLoading}
+                  canWrite={canWrite}
+                  selectionCount={selectionCount}
+                  clipboardCount={clipboard?.length ?? 0}
+                  archiveHref={archiveHref}
+                  parent={parent}
+                  fileInputRef={fileInputRef}
+                  onUploadChange={handleUploadChange}
+                  onCopy={handleCopy}
+                  onPaste={handlePaste}
+                  onRename={handleRename}
+                  onMove={handleMove}
+                  onArchiveClick={handleArchiveClick}
+                  onDelete={handleDelete}
+                  onClearSelection={handleClearSelection}
+                />
 
-            <div className=" py-2 px-1 flex items-center">
-              <div className="breadcrumbs">
-                <button
-                  type="button"
-                  className="crumb crumb-home"
-                  onClick={() => loadPath("/")}
-                  aria-label="Back to Home"
-                >
-                  <Home size={16} strokeWidth={1.8} aria-hidden="true" />
-                </button>
-                {breadcrumbs.map((crumb, index) => (
-                  <button
-                    key={crumb.path}
-                    type="button"
-                    className="crumb"
-                    onClick={() => loadPath(crumb.path)}
-                  >
-                    {crumb.label}
-                    {index < breadcrumbs.length - 1 ? <span>/</span> : null}
-                  </button>
-                ))}
-              </div>
-            </div>
+                <div className=" py-2 px-1 flex items-center">
+                  <div className="breadcrumbs">
+                    <button
+                      type="button"
+                      className="crumb crumb-home"
+                      onClick={() => loadPath("/")}
+                      aria-label="Back to Home"
+                    >
+                      <Home size={16} strokeWidth={1.8} aria-hidden="true" />
+                    </button>
+                    {breadcrumbs.map((crumb, index) => (
+                      <button
+                        key={crumb.path}
+                        type="button"
+                        className="crumb"
+                        onClick={() => loadPath(crumb.path)}
+                      >
+                        {crumb.label}
+                        {index < breadcrumbs.length - 1 ? <span>/</span> : null}
+                      </button>
+                    ))}
+                  </div>
+                </div>
 
-            <FileList
-              showTrash={showTrash}
-              loading={loading}
-              trashItems={pagedTrashItems}
-              filtered={pagedEntries}
-              path={path}
-              viewMode={viewMode}
-              selectedNames={selectedNames}
-              allSelected={allSelected}
-              dragActive={dragActive}
-              actionLoading={actionLoading}
-              canWrite={canWrite}
-              sortMode={sortMode}
-              onSortModeChange={setSortMode}
-              pagination={{
-                page,
-                pageSize,
-                totalItems,
-                pageSizeOptions: PAGE_SIZE_OPTIONS,
-                onPageChange: handlePageChange,
-                onPageSizeChange: handlePageSizeChange,
-              }}
-              showPaginationTop
-              onToggleSelectAll={toggleSelectAll}
-              onToggleSelect={toggleSelect}
-              onEntryClick={handleEntryClick}
-              onRestore={handleRestore}
-            />
+                <FileList
+                  showTrash={showTrash}
+                  loading={loading}
+                  trashItems={pagedTrashItems}
+                  filtered={pagedEntries}
+                  path={path}
+                  viewMode={viewMode}
+                  selectedNames={selectedNames}
+                  allSelected={allSelected}
+                  dragActive={dragActive}
+                  actionLoading={actionLoading}
+                  canWrite={canWrite}
+                  sortMode={sortMode}
+                  onSortModeChange={setSortMode}
+                  pagination={{
+                    page,
+                    pageSize,
+                    totalItems,
+                    pageSizeOptions: PAGE_SIZE_OPTIONS,
+                    onPageChange: handlePageChange,
+                    onPageSizeChange: handlePageSizeChange,
+                  }}
+                  showPaginationTop
+                  onToggleSelectAll={toggleSelectAll}
+                  onToggleSelect={toggleSelect}
+                  onEntryClick={handleEntryClick}
+                  onRestore={handleRestore}
+                />
+              </>
+            )}
           </div>
         )}
       </div>
 
       <S3ConnectionModal
         isOpen={showS3Connection}
-        onClose={() => setShowS3Connection(false)}
+        onClose={() => {
+          setShowS3Connection(false);
+          setPendingS3Connect(false);
+        }}
         onConnected={async () => {
           const conn = await s3Api.s3GetCurrentConnection();
           setS3Connection(conn);
-          loadPath(path);
+          if (conn.connected) {
+            setStorageMode("s3");
+            setPendingS3Connect(false);
+            setPath("/");
+            setPage(1);
+            setSelected(null);
+            setSelectedNames([]);
+            loadPath("/", "s3", true);
+          } else {
+            if (storageMode !== "local" || pendingS3Connect) {
+              setStorageMode("local");
+            }
+            setPendingS3Connect(false);
+            loadPath(path, "local");
+          }
         }}
         userRole={userRole}
+        onOpenS3Settings={() => {
+          setShowS3Connection(false);
+          navigateToS3Settings();
+        }}
       />
 
-      {userRole === "admin" && (
-        <S3SettingsModal
-          isOpen={showS3Settings}
-          onClose={() => setShowS3Settings(false)}
-        />
-      )}
+      <Footer />
     </div>
   );
 }

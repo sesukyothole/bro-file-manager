@@ -1,4 +1,5 @@
-import { FilterX, LogOut } from "lucide-react";
+import { FilterX, LogOut, Menu, X } from "lucide-react";
+import { useState } from "react";
 import { BRAND_EYEBROW, BRAND_SUBTITLE, BRAND_TITLE, THEMES } from "../constants";
 import type { AuthState, DateFilter, Theme, TypeFilter, UserRole } from "../types";
 import { CollapseIcon, ExpandIcon } from "./icons";
@@ -24,6 +25,7 @@ type HeaderProps = {
   onDateFilterChange: (value: DateFilter) => void;
   onClearFilters: () => void;
   onOpenS3Settings?: () => void;
+  onNavigateHome?: () => void;
 };
 
 export function Header({
@@ -47,23 +49,46 @@ export function Header({
   onDateFilterChange,
   onClearFilters,
   onOpenS3Settings,
+  onNavigateHome,
 }: HeaderProps) {
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+
+  const toggleMobileMenu = () => setIsMobileMenuOpen(!isMobileMenuOpen);
+
   return (
     <header className="header">
-      <div>
-        <p className="eyebrow">{BRAND_EYEBROW}</p>
-        <div className="brand-title">
-          <img className="brand-logo" src="/logo.png" alt={`${BRAND_TITLE} logo`} />
-          <h1>{BRAND_TITLE}</h1>
+      <div className="header-brand-container">
+        <div>
+          <p className="eyebrow">{BRAND_EYEBROW}</p>
+          <div className="brand-title">
+            <button
+              onClick={onNavigateHome}
+              className="flex items-center gap-3 bg-transparent border-none p-0 cursor-pointer hover:opacity-80 transition-opacity text-left"
+              style={{ fontFamily: 'inherit', fontSize: 'inherit', color: 'inherit' }}
+              aria-label="Go to home"
+            >
+              <img className="brand-logo" src="/logo.png" alt={`${BRAND_TITLE} logo`} />
+              <h1>{BRAND_TITLE}</h1>
+            </button>
+          </div>
+          <p className="subtitle">{BRAND_SUBTITLE}</p>
+          {auth === "authed" ? (
+            <p className="meta">
+              Signed in as {username || "unknown"} ({userRole})
+            </p>
+          ) : null}
         </div>
-        <p className="subtitle">{BRAND_SUBTITLE}</p>
-        {auth === "authed" ? (
-          <p className="meta">
-            Signed in as {username || "unknown"} ({userRole})
-          </p>
-        ) : null}
+        <button
+          className="burger-menu-btn w-12 h-12"
+          onClick={toggleMobileMenu}
+          aria-label={isMobileMenuOpen ? "Close menu" : "Open menu"}
+          style={{ zIndex: 50 }}
+        >
+          {isMobileMenuOpen ? <X key="close" className="w-6 h-6" /> : <Menu key="menu" className="w-6 h-6" />}
+        </button>
       </div>
-      <div className="header-actions">
+
+      <div className={`header-actions ${isMobileMenuOpen ? "is-open" : ""}`}>
         <div className="header-controls">
           <label className="theme-switcher">
             <span>Theme</span>
