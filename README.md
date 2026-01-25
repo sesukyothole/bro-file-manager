@@ -1,8 +1,12 @@
+## DO NOT USE THIS S3 BRANCH YET FOR PRODUCTION USE. IT IS STILL IN DEVELOPMENT AND MAY CONTAIN BUGS AND SECURITY VULNERABILITIES.
+
 Sponsored by [Jetorbit.com](https://jetorbit.com)
 
 ![Bro File Manager](public/brofm.jpg)
 
 # Bro File Manager
+
+
 
 👨🏻 Lightweight file manager built with Bun + Hono + React. It ships with cookie-based auth, safe path resolution, and a tidy UI for browsing server folders.
 
