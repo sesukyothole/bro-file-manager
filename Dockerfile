@@ -15,5 +15,6 @@ COPY package.json bun.lock ./
 COPY --from=deps /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
 COPY server.ts ./
+COPY server ./server
 EXPOSE 3033
 CMD ["bun", "run", "start"]
