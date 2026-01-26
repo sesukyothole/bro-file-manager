@@ -4,6 +4,16 @@ import { getCookie, setCookie, deleteCookie } from "hono/cookie";
 import { createHmac, randomUUID, scryptSync, timingSafeEqual } from "crypto";
 import { promises as fs } from "fs";
 import path from "path";
+import { S3Client, ListObjectsV2Command, GetObjectCommand, PutObjectCommand, DeleteObjectCommand, CopyObjectCommand, HeadObjectCommand } from "@aws-sdk/client-s3";
+import { S3StorageAdapter } from "./server/storage/adapters.js";
+import {
+  getS3Config,
+  s3ConfigToStorageConfig,
+  addS3Config,
+  updateS3Config,
+  deleteS3Config,
+  getAllS3Configs,
+} from "./server/storage/settings.js";
 
 type UserRole = "read-only" | "read-write" | "admin";
 
@@ -57,6 +67,7 @@ const ARCHIVE_LARGE_BYTES =
     ? ARCHIVE_LARGE_MB * 1024 * 1024
     : 100 * 1024 * 1024;
 const AUDIT_LOG_PATH = process.env.AUDIT_LOG_PATH?.trim() ?? path.join(process.cwd(), "audit.log");
+const S3_MAX_CONNECTIONS = Math.max(1, Number(process.env.S3_MAX_CONNECTIONS ?? "5") || 5);
 const SESSION_COOKIE_BASE_OPTIONS = {
   httpOnly: true,
   sameSite: "Strict",
@@ -105,6 +116,72 @@ const IMAGE_MIME_BY_EXT: Record<string, string> = {
 
 const USERS = await loadUsers();
 const USER_MAP = new Map(USERS.map((user) => [user.username, user]));
+
+// S3 session storage (multiple configs per user session)
+type S3SessionEntry = { configId: string; adapter: S3StorageAdapter };
+const s3Sessions = new Map<string, Map<string, S3SessionEntry>>();
+
+function getSessionS3(sessionId: string): Map<string, S3SessionEntry> | undefined {
+  return s3Sessions.get(sessionId);
+}
+
+function ensureSessionS3(sessionId: string): Map<string, S3SessionEntry> {
+  let sessionMap = s3Sessions.get(sessionId);
+  if (!sessionMap) {
+    sessionMap = new Map();
+    s3Sessions.set(sessionId, sessionMap);
+  }
+  return sessionMap;
+}
+
+function setSessionS3(sessionId: string, configId: string, adapter: S3StorageAdapter) {
+  const sessionMap = ensureSessionS3(sessionId);
+  sessionMap.set(configId, { configId, adapter });
+}
+
+function clearSessionS3(sessionId: string, configId?: string) {
+  if (!configId) {
+    s3Sessions.delete(sessionId);
+    return;
+  }
+  const sessionMap = s3Sessions.get(sessionId);
+  if (!sessionMap) return;
+  sessionMap.delete(configId);
+  if (sessionMap.size === 0) {
+    s3Sessions.delete(sessionId);
+  }
+}
+
+async function getConnectedS3Configs(sessionId: string) {
+  const sessionMap = s3Sessions.get(sessionId);
+  if (!sessionMap) return [];
+  const configs = await getAllS3Configs();
+  const configsById = new Map(configs.map((config) => [config.id, config]));
+  const connected: typeof configs = [];
+  for (const configId of sessionMap.keys()) {
+    const config = configsById.get(configId);
+    if (config && config.active !== false) {
+      connected.push(config);
+    } else {
+      sessionMap.delete(configId);
+    }
+  }
+  if (sessionMap.size === 0) {
+    s3Sessions.delete(sessionId);
+  }
+  return connected;
+}
+
+function getS3ConfigIdFromRequest(c: any, fallback?: { configId?: string }) {
+  return fallback?.configId ?? c.req.query("configId") ?? c.req.header("x-s3-config-id");
+}
+
+async function getS3Adapter(configId: string): Promise<S3StorageAdapter | null> {
+  const config = await getS3Config(configId);
+  if (!config) return null;
+  if (config.active === false) return null;
+  return new S3StorageAdapter(s3ConfigToStorageConfig(config));
+}
 
 const app = new Hono<{ Variables: { session: SessionContext } }>();
 
@@ -973,6 +1050,539 @@ app.get("/api/archive", async (c) => {
   c.header("Content-Disposition", formatContentDisposition("attachment", archiveName));
   await auditLog(c, "archive", { paths: requested, format, compression, username: session.user });
   return c.body(process.stdout);
+});
+
+// ============================================================================
+// S3 Configuration Endpoints (Admin only)
+// ============================================================================
+
+app.get("/api/s3/configs", async (c) => {
+  const session = c.get("session");
+  if (session.role !== "admin") {
+    return c.json({ error: "Unauthorized" }, 401);
+  }
+
+  const configs = await getAllS3Configs();
+  // Return configs without secrets for list view
+  const safeConfigs = configs.map(({ secretAccessKey: _, ...rest }) => rest);
+  return c.json({ configs: safeConfigs });
+});
+
+app.get("/api/s3/configs/:id", async (c) => {
+  const session = c.get("session");
+  if (session.role !== "admin") {
+    return c.json({ error: "Unauthorized" }, 401);
+  }
+
+  const id = c.req.param("id");
+  const config = await getS3Config(id);
+  if (!config) {
+    return c.json({ error: "Configuration not found" }, 404);
+  }
+
+  return c.json({ config });
+});
+
+app.post("/api/s3/configs", async (c) => {
+  const session = c.get("session");
+  if (session.role !== "admin") {
+    return c.json({ error: "Unauthorized" }, 401);
+  }
+
+  const body = await c.req.json();
+  const { name, region, endpoint, accessKeyId, secretAccessKey, bucket, prefix } = body;
+
+  if (!name || !region || !accessKeyId || !secretAccessKey || !bucket) {
+    return c.json({ error: "Missing required fields" }, 400);
+  }
+
+  try {
+    const config = await addS3Config({
+      name,
+      region,
+      endpoint,
+      accessKeyId,
+      secretAccessKey,
+      bucket,
+      prefix,
+    });
+
+    await auditLog(c, "s3_config_added", { username: session.user, configId: config.id, name });
+
+    return c.json({ config: { ...config, secretAccessKey: "***" } }, 201);
+  } catch (error) {
+    return c.json({ error: "Failed to create configuration" }, 500);
+  }
+});
+
+app.put("/api/s3/configs/:id", async (c) => {
+  const session = c.get("session");
+  if (session.role !== "admin") {
+    return c.json({ error: "Unauthorized" }, 401);
+  }
+
+  const id = c.req.param("id");
+  const body = await c.req.json();
+
+  try {
+    const updated = await updateS3Config(id, body);
+    if (!updated) {
+      return c.json({ error: "Configuration not found" }, 404);
+    }
+
+    await auditLog(c, "s3_config_updated", { username: session.user, configId: id });
+
+    return c.json({ config: { ...updated, secretAccessKey: "***" } });
+  } catch (error) {
+    return c.json({ error: "Failed to update configuration" }, 500);
+  }
+});
+
+app.delete("/api/s3/configs/:id", async (c) => {
+  const session = c.get("session");
+  if (session.role !== "admin") {
+    return c.json({ error: "Unauthorized" }, 401);
+  }
+
+  const id = c.req.param("id");
+
+  const deleted = await deleteS3Config(id);
+  if (!deleted) {
+    return c.json({ error: "Configuration not found" }, 404);
+  }
+
+  await auditLog(c, "s3_config_deleted", { username: session.user, configId: id });
+
+  return c.json({ success: true });
+});
+
+app.post("/api/s3/configs/:id/test", async (c) => {
+  const session = c.get("session");
+  if (session.role !== "admin") {
+    return c.json({ error: "Unauthorized" }, 401);
+  }
+
+  const id = c.req.param("id");
+  const config = await getS3Config(id);
+  if (!config) {
+    return c.json({ error: "Configuration not found" }, 404);
+  }
+
+  try {
+    const client = new S3Client({
+      region: config.region,
+      endpoint: config.endpoint,
+      credentials: {
+        accessKeyId: config.accessKeyId,
+        secretAccessKey: config.secretAccessKey,
+      },
+    });
+
+    // Try to list objects (with max 1) to test connection
+    await client.send(new ListObjectsV2Command({
+      Bucket: config.bucket,
+      MaxKeys: 1,
+    }));
+
+    await auditLog(c, "s3_config_tested", { username: session.user, configId: id, success: true });
+
+    return c.json({ success: true, message: "Connection successful" });
+  } catch (error: any) {
+    await auditLog(c, "s3_config_tested", { username: session.user, configId: id, success: false, error: error.message });
+    return c.json({ success: false, error: error.message }, 400);
+  }
+});
+
+// ============================================================================
+// S3 Session Management
+// ============================================================================
+
+app.post("/api/s3/connect", async (c) => {
+  const session = c.get("session");
+
+  const { configId } = await c.req.json();
+  if (!configId) {
+    return c.json({ error: "Missing configId" }, 400);
+  }
+
+  const sessionKey = session.user + ":" + session.role;
+  const sessionMap = ensureSessionS3(sessionKey);
+  if (sessionMap.has(configId)) {
+    const connectedConfigs = await getConnectedS3Configs(sessionKey);
+    const safeConfigs = connectedConfigs.map(({ secretAccessKey: _, ...rest }) => rest);
+    return c.json({ connected: safeConfigs.length > 0, configs: safeConfigs, maxConnections: S3_MAX_CONNECTIONS });
+  }
+  if (sessionMap.size >= S3_MAX_CONNECTIONS) {
+    return c.json({ error: "Maximum S3 connections reached", maxConnections: S3_MAX_CONNECTIONS }, 400);
+  }
+
+  const adapter = await getS3Adapter(configId);
+  if (!adapter) {
+    return c.json({ error: "Configuration not found" }, 404);
+  }
+
+  setSessionS3(sessionKey, configId, adapter);
+
+  await auditLog(c, "s3_connected", { username: session.user, configId });
+
+  const connectedConfigs = await getConnectedS3Configs(sessionKey);
+  const safeConfigs = connectedConfigs.map(({ secretAccessKey: _, ...rest }) => rest);
+  return c.json({
+    connected: safeConfigs.length > 0,
+    configs: safeConfigs,
+    maxConnections: S3_MAX_CONNECTIONS,
+    user: session.user,
+    role: session.role,
+  });
+});
+
+app.post("/api/s3/disconnect", async (c) => {
+  const session = c.get("session");
+  const body = await readJsonBody<{ configId?: string }>(c);
+  const configId = getS3ConfigIdFromRequest(c, body ?? undefined);
+
+  clearSessionS3(session.user + ":" + session.role, configId);
+
+  const connectedConfigs = await getConnectedS3Configs(session.user + ":" + session.role);
+  const safeConfigs = connectedConfigs.map(({ secretAccessKey: _, ...rest }) => rest);
+  return c.json({
+    connected: safeConfigs.length > 0,
+    configs: safeConfigs,
+    maxConnections: S3_MAX_CONNECTIONS,
+    user: session.user,
+    role: session.role,
+  });
+});
+
+app.get("/api/s3/current", async (c) => {
+  const session = c.get("session");
+
+  const connectedConfigs = await getConnectedS3Configs(session.user + ":" + session.role);
+  const safeConfigs = connectedConfigs.map(({ secretAccessKey: _, ...rest }) => rest);
+  return c.json({
+    connected: safeConfigs.length > 0,
+    configs: safeConfigs,
+    maxConnections: S3_MAX_CONNECTIONS,
+    user: session.user,
+    role: session.role,
+  });
+});
+
+app.get("/api/s3/connections", async (c) => {
+  const session = c.get("session");
+  const connectedConfigs = await getConnectedS3Configs(session.user + ":" + session.role);
+  const safeConfigs = connectedConfigs.map(({ secretAccessKey: _, ...rest }) => rest);
+  return c.json({
+    connected: safeConfigs.length > 0,
+    configs: safeConfigs,
+    maxConnections: S3_MAX_CONNECTIONS,
+    user: session.user,
+    role: session.role,
+  });
+});
+
+// ============================================================================
+// S3 File Operations
+// ============================================================================
+
+// Helper to verify S3 session
+async function requireS3Session(
+  c: any,
+  session: SessionContext,
+  configId?: string
+): Promise<{ adapter: S3StorageAdapter; configId: string } | { error: string; status: number }> {
+  const sessionKey = session.user + ":" + session.role;
+  const targetId = configId ?? getS3ConfigIdFromRequest(c);
+  if (!targetId) {
+    return { error: "Missing configId", status: 400 };
+  }
+  const s3Session = getSessionS3(sessionKey);
+  const entry = s3Session?.get(targetId);
+  if (!entry) {
+    return { error: "Not connected to S3", status: 400 };
+  }
+
+  return { adapter: entry.adapter, configId: targetId };
+}
+
+app.get("/api/s3/list", async (c) => {
+  const session = c.get("session");
+  const configId = getS3ConfigIdFromRequest(c);
+  const result = await requireS3Session(c, session, configId);
+  if ("error" in result) return c.json({ error: result.error }, result.status);
+
+  const { adapter } = result;
+  const path = c.req.query("path") || "/";
+  const limit = parseInt(c.req.query("limit") || "100");
+  const offset = parseInt(c.req.query("offset") || "0");
+
+  try {
+    const { entries, total } = await adapter.list(path, { limit, offset });
+    return c.json({ entries, total, user: session.user, role: session.role });
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500);
+  }
+});
+
+app.get("/api/s3/download", async (c) => {
+  const session = c.get("session");
+  const configId = getS3ConfigIdFromRequest(c);
+  const result = await requireS3Session(c, session, configId);
+  if ("error" in result) return c.json({ error: result.error }, result.status);
+
+  const { adapter } = result;
+  const path = c.req.query("path");
+  if (!path) return c.json({ error: "Missing path" }, 400);
+
+  try {
+    const content = await adapter.read(path);
+    const stat = await adapter.stat(path);
+    const filename = path.split("/").pop() || "download";
+
+    return c.body(content, 200, {
+      "Content-Type": "application/octet-stream",
+      "Content-Disposition": `attachment; filename="${filename}"`,
+      "Content-Length": stat?.size.toString() || "0",
+    });
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500);
+  }
+});
+
+app.get("/api/s3/preview", async (c) => {
+  const session = c.get("session");
+  const configId = getS3ConfigIdFromRequest(c);
+  const result = await requireS3Session(c, session, configId);
+  if ("error" in result) return c.json({ error: result.error }, result.status);
+
+  const { adapter } = result;
+  const path = c.req.query("path");
+  if (!path) return c.json({ error: "Missing path" }, 400);
+
+  try {
+    const stat = await adapter.stat(path);
+    if (!stat || stat.type === "directory") {
+      return c.json({ error: "Not a file" }, 400);
+    }
+
+    const content = await adapter.read(path);
+    const text = content.toString("utf-8");
+
+    return c.json({ content: text.slice(0, MAX_PREVIEW_BYTES), size: stat.size });
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500);
+  }
+});
+
+app.get("/api/s3/image", async (c) => {
+  const session = c.get("session");
+  const configId = getS3ConfigIdFromRequest(c);
+  const result = await requireS3Session(c, session, configId);
+  if ("error" in result) return c.json({ error: result.error }, result.status);
+
+  const { adapter } = result;
+  const path = c.req.query("path");
+  if (!path) return c.json({ error: "Missing path" }, 400);
+
+  try {
+    const content = await adapter.read(path);
+    const ext = path.split(".").pop()?.toLowerCase() || "";
+    const mimeType = IMAGE_MIME_BY_EXT[ext] || "image/jpeg";
+
+    return c.body(content, 200, {
+      "Content-Type": mimeType,
+    });
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500);
+  }
+});
+
+app.get("/api/s3/edit", async (c) => {
+  const session = c.get("session");
+  const configId = getS3ConfigIdFromRequest(c);
+  const result = await requireS3Session(c, session, configId);
+  if ("error" in result) return c.json({ error: result.error }, result.status);
+
+  const { adapter } = result;
+  if (session.role === "read-only") {
+    return c.json({ error: "Read-only users cannot edit files" }, 403);
+  }
+
+  const path = c.req.query("path");
+  if (!path) return c.json({ error: "Missing path" }, 400);
+
+  try {
+    const stat = await adapter.stat(path);
+    if (!stat) {
+      return c.json({ error: "File not found" }, 404);
+    }
+
+    if (stat.size > MAX_EDIT_BYTES) {
+      return c.json({ error: "File too large to edit" }, 400);
+    }
+
+    const content = await adapter.read(path);
+    return c.json({ content: content.toString("utf-8") });
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500);
+  }
+});
+
+app.put("/api/s3/edit", async (c) => {
+  const session = c.get("session");
+  const body = await c.req.json();
+  const configId = getS3ConfigIdFromRequest(c, body ?? undefined);
+  const result = await requireS3Session(c, session, configId);
+  if ("error" in result) return c.json({ error: result.error }, result.status);
+
+  const { adapter } = result;
+  if (session.role === "read-only") {
+    return c.json({ error: "Read-only users cannot edit files" }, 403);
+  }
+
+  const { path, content } = body;
+  if (!path || content === undefined) {
+    return c.json({ error: "Missing path or content" }, 400);
+  }
+
+  try {
+    await adapter.write(path, Buffer.from(content));
+    await auditLog(c, "s3_file_edited", { username: session.user, path });
+    return c.json({ success: true });
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500);
+  }
+});
+
+app.post("/api/s3/upload", async (c) => {
+  const session = c.get("session");
+  const formData = await c.req.formData();
+  const configId = getS3ConfigIdFromRequest(c, { configId: formData.get("configId") as string });
+  const result = await requireS3Session(c, session, configId);
+  if ("error" in result) return c.json({ error: result.error }, result.status);
+
+  const { adapter } = result;
+  if (session.role === "read-only") {
+    return c.json({ error: "Read-only users cannot upload files" }, 403);
+  }
+
+  const file = formData.get("file") as File;
+  const path = formData.get("path") as string;
+
+  if (!file || !path) {
+    return c.json({ error: "Missing file or path" }, 400);
+  }
+
+  try {
+    const buffer = Buffer.from(await file.arrayBuffer());
+    const targetPath = path.endsWith("/") ? path + file.name : path;
+    await adapter.write(targetPath, buffer);
+
+    await auditLog(c, "s3_file_uploaded", { username: session.user, path: targetPath, size: buffer.length });
+
+    return c.json({ success: true });
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500);
+  }
+});
+
+app.delete("/api/s3/delete", async (c) => {
+  const session = c.get("session");
+  const configId = getS3ConfigIdFromRequest(c);
+  const result = await requireS3Session(c, session, configId);
+  if ("error" in result) return c.json({ error: result.error }, result.status);
+
+  const { adapter } = result;
+  if (session.role === "read-only") {
+    return c.json({ error: "Read-only users cannot delete files" }, 403);
+  }
+
+  const path = c.req.query("path");
+  if (!path) return c.json({ error: "Missing path" }, 400);
+
+  try {
+    await adapter.delete(path);
+    await auditLog(c, "s3_file_deleted", { username: session.user, path });
+    return c.json({ success: true });
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500);
+  }
+});
+
+app.post("/api/s3/move", async (c) => {
+  const session = c.get("session");
+  const body = await c.req.json();
+  const configId = getS3ConfigIdFromRequest(c, body ?? undefined);
+  const result = await requireS3Session(c, session, configId);
+  if ("error" in result) return c.json({ error: result.error }, result.status);
+
+  const { adapter } = result;
+  if (session.role === "read-only") {
+    return c.json({ error: "Read-only users cannot move files" }, 403);
+  }
+
+  const { source, destination } = body;
+  if (!source || !destination) {
+    return c.json({ error: "Missing source or destination" }, 400);
+  }
+
+  try {
+    await adapter.move(source, destination);
+    await auditLog(c, "s3_file_moved", { username: session.user, source, destination });
+    return c.json({ success: true });
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500);
+  }
+});
+
+app.post("/api/s3/copy", async (c) => {
+  const session = c.get("session");
+  const body = await c.req.json();
+  const configId = getS3ConfigIdFromRequest(c, body ?? undefined);
+  const result = await requireS3Session(c, session, configId);
+  if ("error" in result) return c.json({ error: result.error }, result.status);
+
+  const { adapter } = result;
+  if (session.role === "read-only") {
+    return c.json({ error: "Read-only users cannot copy files" }, 403);
+  }
+
+  const { source, destination } = body;
+  if (!source || !destination) {
+    return c.json({ error: "Missing source or destination" }, 400);
+  }
+
+  try {
+    await adapter.copy(source, destination);
+    await auditLog(c, "s3_file_copied", { username: session.user, source, destination });
+    return c.json({ success: true });
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500);
+  }
+});
+
+app.post("/api/s3/mkdir", async (c) => {
+  const session = c.get("session");
+  const body = await c.req.json();
+  const configId = getS3ConfigIdFromRequest(c, body ?? undefined);
+  const result = await requireS3Session(c, session, configId);
+  if ("error" in result) return c.json({ error: result.error }, result.status);
+
+  const { adapter } = result;
+  if (session.role === "read-only") {
+    return c.json({ error: "Read-only users cannot create directories" }, 403);
+  }
+
+  const { path } = body;
+  if (!path) return c.json({ error: "Missing path" }, 400);
+
+  try {
+    await adapter.mkdir(path);
+    await auditLog(c, "s3_directory_created", { username: session.user, path });
+    return c.json({ success: true });
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500);
+  }
 });
 
 app.use("/*", serveStatic({ root: "./dist" }));

@@ -1,4 +1,5 @@
-import { FilterX, LogOut } from "lucide-react";
+import { FilterX, LogOut, Menu, X } from "lucide-react";
+import { useState } from "react";
 import { BRAND_EYEBROW, BRAND_SUBTITLE, BRAND_TITLE, THEMES } from "../constants";
 import type { AuthState, DateFilter, Theme, TypeFilter, UserRole } from "../types";
 import { CollapseIcon, ExpandIcon } from "./icons";
@@ -23,6 +24,8 @@ type HeaderProps = {
   onSizeMaxChange: (value: string) => void;
   onDateFilterChange: (value: DateFilter) => void;
   onClearFilters: () => void;
+  onOpenS3Settings?: () => void;
+  onNavigateHome?: () => void;
 };
 
 export function Header({
@@ -45,23 +48,47 @@ export function Header({
   onSizeMaxChange,
   onDateFilterChange,
   onClearFilters,
+  onOpenS3Settings,
+  onNavigateHome,
 }: HeaderProps) {
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+
+  const toggleMobileMenu = () => setIsMobileMenuOpen(!isMobileMenuOpen);
+
   return (
     <header className="header">
-      <div>
-        <p className="eyebrow">{BRAND_EYEBROW}</p>
-        <div className="brand-title">
-          <img className="brand-logo" src="/logo.png" alt={`${BRAND_TITLE} logo`} />
-          <h1>{BRAND_TITLE}</h1>
+      <div className="header-brand-container">
+        <div>
+          <p className="eyebrow">{BRAND_EYEBROW}</p>
+          <div className="brand-title">
+            <button
+              onClick={onNavigateHome}
+              className="flex items-center gap-3 bg-transparent border-none p-0 cursor-pointer hover:opacity-80 transition-opacity text-left"
+              style={{ fontFamily: 'inherit', fontSize: 'inherit', color: 'inherit' }}
+              aria-label="Go to home"
+            >
+              <img className="brand-logo" src="/logo.png" alt={`${BRAND_TITLE} logo`} />
+              <h1>{BRAND_TITLE}</h1>
+            </button>
+          </div>
+          <p className="subtitle">{BRAND_SUBTITLE}</p>
+          {auth === "authed" ? (
+            <p className="meta">
+              Signed in as {username || "unknown"} ({userRole})
+            </p>
+          ) : null}
         </div>
-        <p className="subtitle">{BRAND_SUBTITLE}</p>
-        {auth === "authed" ? (
-          <p className="meta">
-            Signed in as {username || "unknown"} ({userRole})
-          </p>
-        ) : null}
+        <button
+          className="burger-menu-btn w-12 h-12"
+          onClick={toggleMobileMenu}
+          aria-label={isMobileMenuOpen ? "Close menu" : "Open menu"}
+          style={{ zIndex: 50 }}
+        >
+          {isMobileMenuOpen ? <X key="close" className="w-6 h-6" /> : <Menu key="menu" className="w-6 h-6" />}
+        </button>
       </div>
-      <div className="header-actions">
+
+      <div className={`header-actions ${isMobileMenuOpen ? "is-open" : ""}`}>
         <div className="header-controls">
           <label className="theme-switcher">
             <span>Theme</span>
@@ -75,9 +102,32 @@ export function Header({
             </select>
           </label>
           {auth === "authed" ? (
-            <button className="ghost" onClick={onLogout} aria-label="Logout" title="Logout">
-              <LogOut size={16} strokeWidth={1.8} aria-hidden="true" />
-            </button>
+            <>
+              {userRole === "admin" && onOpenS3Settings && (
+                <button
+                  className="ghost"
+                  onClick={onOpenS3Settings}
+                  aria-label="S3 Settings"
+                  title="S3 Settings"
+                >
+                  <svg
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.8"
+                    aria-hidden="true"
+                  >
+                    <path d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5.002 5.002 0 10-9.78 2.096A4.001 4.001 0 003 15z" />
+                    <path d="M12 12v6m-3-3h6" />
+                  </svg>
+                </button>
+              )}
+              <button className="ghost" onClick={onLogout} aria-label="Logout" title="Logout">
+                <LogOut size={16} strokeWidth={1.8} aria-hidden="true" />
+              </button>
+            </>
           ) : null}
           {auth === "authed" && !showTrash ? (
             <button

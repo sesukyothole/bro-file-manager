@@ -76,3 +76,31 @@ export const DATE_RANGE_MS: Record<DateFilter, number | null> = {
 
 export const MB_BYTES = 1024 * 1024;
 export const CONTENT_SEARCH_DEBOUNCE_MS = 300;
+
+// S3 presets for quick configuration
+export const S3_PRESETS = [
+  {
+    id: "aws",
+    name: "Amazon S3",
+    region: "us-east-1",
+    endpoint: "",
+  },
+  {
+    id: "r2",
+    name: "Cloudflare R2",
+    region: "auto",
+    endpoint: "https://YOUR_ACCOUNT_ID.r2.cloudflarestorage.com",
+  },
+  {
+    id: "b2",
+    name: "Backblaze B2",
+    region: "us-west-004",
+    endpoint: "https://s3.us-west-004.backblazeb2.com",
+  },
+  {
+    id: "minio",
+    name: "MinIO",
+    region: "us-east-1",
+    endpoint: "http://localhost:9000",
+  },
+] as const;

@@ -318,7 +318,12 @@ body {
   gap: 16px;
 }
 
+.burger-menu-btn {
+  display: none;
+}
+
 .brand-title {
+
   display: flex;
   align-items: center;
   gap: 12px;
@@ -358,7 +363,7 @@ body {
   top: calc(100% + 8px);
   right: 0;
   z-index: 30;
- 
+
   border: 1px solid rgba(28, 37, 43, 0.1);
   border-radius: 14px;
   padding: 12px;
@@ -376,6 +381,7 @@ body {
   opacity: 1;
   transform: translateY(0);
   pointer-events: auto;
+  z-index: 999;
 }
 
 .filters-trigger svg {
@@ -708,6 +714,17 @@ select:disabled {
   opacity: 0.6;
   cursor: not-allowed;
   pointer-events: none;
+  transform: none;
+  box-shadow: none;
+}
+
+/* Storage switcher: keep light, no hover lift/shadow */
+.storage-switcher button {
+  transition: color 0.15s ease, background-color 0.15s ease;
+}
+
+.storage-switcher button:hover,
+.storage-switcher button:focus-visible {
   transform: none;
   box-shadow: none;
 }
@@ -1179,6 +1196,7 @@ button.filters-toggle svg {
     opacity: 0;
     transform: translateY(12px);
   }
+
   to {
     opacity: 1;
     transform: translateY(0);
@@ -1190,6 +1208,7 @@ button.filters-toggle svg {
     opacity: 0;
     transform: translateY(-6px);
   }
+
   to {
     opacity: 1;
     transform: translateY(0);
@@ -1201,6 +1220,7 @@ button.filters-toggle svg {
     opacity: 0;
     transform: scale(0.96);
   }
+
   to {
     opacity: 1;
     transform: scale(1);
@@ -1226,7 +1246,93 @@ button.filters-toggle svg {
 
 @media (max-width: 600px) {
   .app {
-    padding: 32px 16px 64px;
+    padding: 24px 16px 64px;
+  }
+
+  /* Header Layout */
+  .header {
+    flex-direction: column;
+    gap: 16px;
+    position: relative;
+  }
+
+  .header-brand-container {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    width: 100%;
+  }
+
+  /* Burger Menu Button */
+  .burger-menu-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    border-radius: 12px;
+    background: var(--card);
+    border: 1px solid rgba(28, 37, 43, 0.08);
+    color: var(--ink);
+    cursor: pointer;
+    box-shadow: 0 2px 8px rgba(28, 37, 43, 0.06);
+    transition: all 0.2s ease;
+  }
+
+  .burger-menu-btn:active {
+    transform: scale(0.96);
+  }
+
+  /* Mobile Menu Actions */
+  .header-actions {
+    display: none;
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    z-index: 200;
+    width: 100%;
+    flex-direction: column;
+    gap: 12px;
+    background: var(--card);
+    border: 1px solid rgba(28, 37, 43, 0.08);
+    padding: 16px;
+    border-radius: 16px;
+    box-shadow: var(--shadow);
+    animation: fadeUp 0.3s ease forwards;
+  }
+
+  .header-actions.is-open {
+    display: flex;
+  }
+
+  .header-filters {
+    position: static;
+    width: 100%;
+    box-shadow: none;
+    border: none;
+    padding: 0;
+    margin-top: 12px;
+    transform: none;
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  .header-filters:not(.is-open) {
+    display: none;
+  }
+
+  .header-controls {
+    width: 100%;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+
+  /* Adjust theme switcher for mobile menu */
+  .theme-switcher {
+    width: 100%;
+    justify-content: space-between;
   }
 
   h1 {
