@@ -5,7 +5,7 @@ import { createHmac, randomUUID, scryptSync, timingSafeEqual } from "crypto";
 import { promises as fs } from "fs";
 import path from "path";
 import { S3Client, ListObjectsV2Command, GetObjectCommand, PutObjectCommand, DeleteObjectCommand, CopyObjectCommand, HeadObjectCommand } from "@aws-sdk/client-s3";
-import { S3StorageAdapter } from "./server/storage/adapters.js";
+import { S3StorageAdapter } from "./server/storage/adapters";
 import {
   getS3Config,
   s3ConfigToStorageConfig,
@@ -13,7 +13,7 @@ import {
   updateS3Config,
   deleteS3Config,
   getAllS3Configs,
-} from "./server/storage/settings.js";
+} from "./server/storage/settings";
 
 type UserRole = "read-only" | "read-write" | "admin";
 
